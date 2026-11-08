@@ -3,11 +3,11 @@
   "opponent": "Washington Huskies",
   "status": "IN_PROGRESS",
   "period": "Q2",
-  "penn_state_score": 28,
+  "penn_state_score": 34,
   "opponent_score": 6,
-  "score_difference": 22,
+  "score_difference": 28,
   "game_id": "401858516",
-  "event": "NONE",
-  "scoring_team": null,
-  "event_id": "401858516-28-6"
+  "event": "TOUCHDOWN",
+  "scoring_team": "Penn State",
+  "event_id": "401858516-34-6"
 }
