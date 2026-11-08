@@ -3,11 +3,11 @@
   "opponent": "Washington Huskies",
   "status": "FINAL",
   "period": "Q4",
-  "penn_state_score": 20,
+  "penn_state_score": 28,
   "opponent_score": 25,
   "score_difference": 3,
   "game_id": "401858516",
   "event": "SCORE_CHANGED",
-  "scoring_team": "MULTIPLE",
+  "scoring_team": "PENN_STATE",
   "event_id": "401858516-28-25"
 }
