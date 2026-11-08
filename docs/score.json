@@ -1,13 +1,13 @@
 {
   "team": "Penn State",
   "opponent": "Washington Huskies",
-  "status": "FINAL",
-  "period": "Q4",
-  "penn_state_score": 38,
-  "opponent_score": 25,
-  "score_difference": 3,
+  "status": "IN_PROGRESS",
+  "period": "Q2",
+  "penn_state_score": 34,
+  "opponent_score": 6,
+  "score_difference": 28,
   "game_id": "401858516",
-  "event": "SCORE_CHANGED",
-  "scoring_team": "MULTIPLE",
-  "event_id": "401858516-28-25"
+  "event": "TOUCHDOWN",
+  "scoring_team": "Penn State",
+  "event_id": "401858516-34-6"
 }
