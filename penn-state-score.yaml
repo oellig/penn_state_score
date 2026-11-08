@@ -9,12 +9,12 @@ substitutions:
   button_pin: GPIO33
 
   # Defaults
-  default_team: "PSU"
-  default_song_duration: "60"
-  default_score_threshold: "6"
-  default_volume: "0.75"
+  default_song_duration: "62"
+  default_volume: "1.00"
 
-  
+  # Replace this with the public URL of your GitLab-hosted JSON file.
+  score_json_url: "https://oellig.github.io/penn_state_score/score.json"
+
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
@@ -44,13 +44,10 @@ ota:
   - platform: web_server
 
 wifi:
-  # Wifi credentials are stored securely by new device wizard.
-  ssid: mywifissid
-  password: mywifipassword
-
   ap:
-    ssid: ${friendly_name} Fallback
-    password: wearepennstate
+    ssid: "${friendly_name} Fallback"
+    password: "wearepennstate"
+
 captive_portal:
 
 web_server:
@@ -58,9 +55,6 @@ web_server:
   version: 3
   local: true
 
-  auth:
-    username: admin
-    password: password
   sorting_groups:
     - id: score_group
       name: "Live Score"
@@ -78,88 +72,66 @@ web_server:
       name: "Diagnostics"
       sorting_weight: 40
 
-
 # -------------------------------------------------------------------
-# GLOBAL STATE
+# SCORE TRACKING STATE
 # -------------------------------------------------------------------
 
 globals:
-  - id: last_score
-    type: int
-    restore_value: yes
-    initial_value: "0"
-
+  # Used to establish a baseline on the first successful JSON read.
+  # Prevents the device announcing an old score immediately after boot.
   - id: score_initialized
     type: bool
     restore_value: yes
     initial_value: "false"
 
+  - id: last_score
+    type: int
+    restore_value: yes
+    initial_value: "0"
+
+  # Total points (Penn State + opponent) are tracked so the threshold
+  # applies to the size of the scoring play, regardless of who scored.
+  - id: last_total_score
+    type: int
+    restore_value: yes
+    initial_value: "0"
+
+  # Persist the last handled event so repeated 15-second polls,
+  # or a reboot, do not replay the same scoring announcement.
   - id: last_event_id
     type: std::string
     restore_value: yes
-    max_restore_data_length: 32
+    max_restore_data_length: 48
     initial_value: '""'
-
-  - id: request_in_progress
-    type: bool
-    restore_value: no
-    initial_value: "false"
-
-  - id: espn_event_id
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-
-  - id: espn_team_id
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-
-  - id: espn_team_name
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-
-  - id: espn_opponent_team_id
-    type: std::string
-    restore_value: no
-    initial_value: '""'
-
-  - id: espn_event_found
-    type: bool
-    restore_value: no
-    initial_value: "false"
-  
 
 # -------------------------------------------------------------------
-# ESPN HTTP
+# JSON HTTP CLIENT
 # -------------------------------------------------------------------
 
 http_request:
-  useragent: "ESPHome Penn State Score Speaker"
+  useragent: "ESPHome Penn State Score Tracker"
   timeout: 10s
-  verify_ssl: false
-  #buffer_size_rx: 65535
-  
+  verify_ssl: true
+
 # -------------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------------
 
-text:
+number:
   - platform: template
-    id: team_abbreviation
-    name: "ESPN Team Abbreviation"
-    icon: "mdi:football"
-    mode: text
+    id: score_threshold
+    name: "Automatic Play Threshold"
+    icon: "mdi:bullseye-arrow"
     optimistic: true
     restore_value: true
-    initial_value: ${default_team}
-    min_length: 2
-    max_length: 8
+    initial_value: 6
+    min_value: 1
+    max_value: 14
+    step: 1
+    unit_of_measurement: "points"
     web_server:
       sorting_group_id: configuration_group
 
-number:
   - platform: template
     id: song_duration
     name: "Song Duration"
@@ -171,20 +143,6 @@ number:
     max_value: 300
     step: 1
     unit_of_measurement: "s"
-    web_server:
-      sorting_group_id: configuration_group
-
-  - platform: template
-    id: score_threshold
-    name: "Scoring Threshold"
-    icon: "mdi:football"
-    optimistic: true
-    restore_value: true
-    initial_value: ${default_score_threshold}
-    min_value: 1
-    max_value: 20
-    step: 1
-    unit_of_measurement: "pts"
     web_server:
       sorting_group_id: configuration_group
 
@@ -201,13 +159,11 @@ number:
     unit_of_measurement: "%"
     web_server:
       sorting_group_id: configuration_group
-
     set_action:
       - media_player.volume_set:
           id: football_player
           volume: !lambda |-
             return x / 100.0f;
-
 
 # -------------------------------------------------------------------
 # LIVE SCORE DISPLAY
@@ -233,6 +189,15 @@ sensor:
       sorting_group_id: score_group
 
   - platform: template
+    id: score_difference
+    name: "Score Difference"
+    icon: "mdi:plus-minus"
+    accuracy_decimals: 0
+    state_class: measurement
+    web_server:
+      sorting_group_id: score_group
+
+  - platform: template
     id: previous_score
     name: "Previous Team Score"
     icon: "mdi:history"
@@ -248,8 +213,14 @@ sensor:
     web_server:
       sorting_group_id: diagnostics_group
 
-
 text_sensor:
+  - platform: template
+    id: team_name
+    name: "Team"
+    icon: "mdi:football"
+    web_server:
+      sorting_group_id: score_group
+
   - platform: template
     id: opponent_name
     name: "Opponent"
@@ -265,26 +236,39 @@ text_sensor:
       sorting_group_id: score_group
 
   - platform: template
-    id: game_clock
-    name: "Game Clock"
+    id: game_period
+    name: "Period"
     icon: "mdi:clock-outline"
     web_server:
       sorting_group_id: score_group
 
   - platform: template
+    id: scoring_event
+    name: "Scoring Event"
+    icon: "mdi:flag"
+    web_server:
+      sorting_group_id: score_group
+
+  - platform: template
+    id: scoring_team
+    name: "Scoring Team"
+    icon: "mdi:account-voice"
+    web_server:
+      sorting_group_id: score_group
+
+  - platform: template
     id: current_event_id
-    name: "ESPN Event ID"
+    name: "Event ID"
     icon: "mdi:identifier"
     web_server:
       sorting_group_id: diagnostics_group
 
   - platform: template
-    id: last_espn_poll
-    name: "Last ESPN Poll"
+    id: last_json_poll
+    name: "Last JSON Poll"
     icon: "mdi:cloud-check"
     web_server:
       sorting_group_id: diagnostics_group
-
 
 # -------------------------------------------------------------------
 # I2S / MAX98357A AUDIO
@@ -294,7 +278,6 @@ i2s_audio:
   - id: i2s_bus
     i2s_bclk_pin: ${i2s_bclk_pin}
     i2s_lrclk_pin: ${i2s_lrc_pin}
-
 
 speaker:
   # Physical MAX98357A output
@@ -340,809 +323,11 @@ media_player:
     volume_min: 0%
     volume_max: 100%
 
-
 # -------------------------------------------------------------------
-# PLAY SONG SCRIPT
+# AUDIO PLAYBACK
 # -------------------------------------------------------------------
 
 script:
-
-  - id: check_espn
-    mode: single
-    then:
-      - if:
-          condition:
-            lambda: |-
-              return id(request_in_progress);
-          then:
-            - lambda: |-
-                ESP_LOGW(
-                  "espn",
-                  "Previous ESPN request still in progress; skipping poll."
-                );
-
-          else:
-            - lambda: |-
-                id(request_in_progress) = true;
-                id(espn_event_found) = false;
-                id(espn_event_id) = "";
-                id(espn_opponent_team_id) = "";
-
-            - if:
-                condition:
-                  lambda: |-
-                    std::string team =
-                      id(team_abbreviation)->state;
-
-                    // Trim leading/trailing whitespace.
-                    size_t start =
-                      team.find_first_not_of(" \t\r\n");
-
-                    size_t end =
-                      team.find_last_not_of(" \t\r\n");
-
-                    if (start == std::string::npos) {
-                      return false;
-                    }
-
-                    team =
-                      team.substr(start, end - start + 1);
-
-                    // Numeric value = ESPN team ID.
-                    for (char c : team) {
-                      if (c < '0' || c > '9') {
-                        return false;
-                      }
-                    }
-
-                    return true;
-
-                then:
-                  - lambda: |-
-                      std::string team =
-                        id(team_abbreviation)->state;
-
-                      // Trim leading/trailing whitespace.
-                      size_t start =
-                        team.find_first_not_of(" \t\r\n");
-
-                      size_t end =
-                        team.find_last_not_of(" \t\r\n");
-
-                      team =
-                        team.substr(start, end - start + 1);
-
-                      id(espn_team_id) = team;
-                      id(espn_team_name) = "";
-
-                      ESP_LOGI(
-                        "espn",
-                        "Checking ESPN for '%s'",
-                        team.c_str()
-                      );
-
-                      ESP_LOGI(
-                        "espn",
-                        "Using configured ESPN team ID: %s",
-                        id(espn_team_id).c_str()
-                      );
-
-                  - script.execute: espn_find_event
-
-                else:
-                  - lambda: |-
-                      ESP_LOGI(
-                        "espn",
-                        "Checking ESPN for '%s'",
-                        id(team_abbreviation)->state.c_str()
-                      );
-
-                  - script.execute: espn_find_team
-
-  # Resolve a team abbreviation/name to an ESPN team ID.
-  # Numeric IDs bypass this script completely.
-  - id: espn_find_team
-    mode: single
-    then:
-      - http_request.get:
-          url: !lambda |-
-            std::string team =
-              id(team_abbreviation)->state;
-
-            std::string url =
-              "https://site.web.api.espn.com/apis/site/v2/"
-              "sports/football/college-football/teams/" +
-              team;
-
-            ESP_LOGI(
-              "espn",
-              "Looking up ESPN team: %s",
-              team.c_str()
-            );
-
-            return url;
-
-          capture_response: true
-          max_response_buffer_size: 20000
-
-          on_response:
-            then:
-              - lambda: |-
-                  ESP_LOGI(
-                    "espn",
-                    "Team lookup response: %u bytes",
-                    (unsigned) body.size()
-                  );
-
-                  bool parsed = json::parse_json(
-                    body,
-                    [](JsonObject root) -> bool {
-                      JsonObject team =
-                        root["team"];
-
-                      if (team.isNull()) {
-                        ESP_LOGE(
-                          "espn",
-                          "Team lookup returned no team object."
-                        );
-                        return false;
-                      }
-
-                      const char *team_id =
-                        team["id"] | "";
-
-                      const char *abbreviation =
-                        team["abbreviation"] | "";
-
-                      const char *display_name =
-                        team["displayName"] | "";
-
-                      if (strlen(team_id) == 0) {
-                        ESP_LOGE(
-                          "espn",
-                          "Team lookup returned no team ID."
-                        );
-                        return false;
-                      }
-
-                      id(espn_team_id) =
-                        team_id;
-
-                      id(espn_team_name) =
-                        display_name;
-
-                      ESP_LOGI(
-                        "espn",
-                        "Team: %s (%s), ESPN ID=%s",
-                        display_name,
-                        abbreviation,
-                        team_id
-                      );
-
-                      return true;
-                    }
-                  );
-
-                  if (!parsed) {
-                    id(request_in_progress) = false;
-                  }
-
-              - if:
-                  condition:
-                    lambda: |-
-                      return !id(espn_team_id).empty();
-                  then:
-                    - script.execute: espn_find_event
-                  else:
-                    - lambda: |-
-                        id(request_in_progress) = false;
-
-          on_error:
-            then:
-              - lambda: |-
-                  ESP_LOGE(
-                    "espn",
-                    "Failed to retrieve ESPN team."
-                  );
-
-                  id(request_in_progress) = false;
-
-
-  - id: espn_find_event
-    mode: single
-    then:
-      - http_request.get:
-          url: !lambda |-
-            auto now = id(sntp_time).now();
-
-            char date[9];
-
-            snprintf(
-              date,
-              sizeof(date),
-              "%04d%02d%02d",
-              now.year,
-              now.month,
-              now.day_of_month
-            );
-
-            std::string url =
-              "https://sports.core.api.espn.com/v2/sports/"
-              "football/leagues/college-football/seasons/2026/"
-              "teams/" +
-              id(espn_team_id) +
-              "/events?dates=" +
-              date +
-              "&limit=100&lang=en&region=us";
-
-            ESP_LOGI(
-              "espn",
-              "Requesting today's %s events: %s",
-              id(team_abbreviation)->state.c_str(),
-              url.c_str()
-            );
-
-            return url;
-
-          capture_response: true
-          max_response_buffer_size: 1024
-
-          on_response:
-            then:
-              - lambda: |-
-                  id(espn_event_found) = false;
-
-                  ESP_LOGI(
-                    "espn",
-                    "Team events response: %u bytes",
-                    (unsigned) body.size()
-                  );
-
-                  bool parsed = json::parse_json(
-                    body,
-                    [](JsonObject root) -> bool {
-                      JsonArray items = root["items"];
-
-                      if (items.isNull() || items.size() == 0) {
-                        ESP_LOGI(
-                          "espn",
-                          "%s has no game today.",
-                          id(team_abbreviation)->state.c_str()
-                        );
-
-                        id(espn_event_id) = "";
-                        id(current_event_id)->publish_state("");
-                        id(opponent_name)->publish_state("");
-                        id(game_status)->publish_state("No game today");
-                        id(game_clock)->publish_state("");
-                        id(team_score)->publish_state(0);
-                        id(opponent_score)->publish_state(0);
-
-                        id(last_event_id) = "";
-                        id(espn_opponent_team_id) = "";
-                        id(score_initialized) = false;
-                        id(last_score) = 0;
-
-                        id(previous_score)->publish_state(0);
-                        id(last_score_change)->publish_state(0);
-
-                        return true;
-                      }
-
-                      std::string ref =
-                        items[0]["$ref"] | "";
-
-                      if (ref.empty()) {
-                        ESP_LOGE(
-                          "espn",
-                          "Event item has no $ref."
-                        );
-                        return false;
-                      }
-
-                      size_t pos =
-                        ref.find("/events/");
-
-                      if (pos == std::string::npos) {
-                        ESP_LOGE(
-                          "espn",
-                          "Unable to extract event ID from $ref."
-                        );
-                        return false;
-                      }
-
-                      pos += 8;
-
-                      size_t end =
-                        ref.find("?", pos);
-
-                      if (end == std::string::npos) {
-                        end = ref.length();
-                      }
-
-                      id(espn_event_id) =
-                        ref.substr(pos, end - pos);
-
-                      id(current_event_id)->
-                        publish_state(id(espn_event_id));
-
-                      id(espn_event_found) = true;
-
-                      ESP_LOGI(
-                        "espn",
-                        "Today's %s event ID: %s",
-                        id(team_abbreviation)->state.c_str(),
-                        id(espn_event_id).c_str()
-                      );
-
-                      return true;
-                    }
-                  );
-
-                  if (!parsed) {
-                    id(request_in_progress) = false;
-                  }
-
-              - if:
-                  condition:
-                    lambda: |-
-                      return id(espn_event_found);
-                  then:
-                    - script.execute: espn_get_event
-                  else:
-                    - lambda: |-
-                        id(request_in_progress) = false;
-
-          on_error:
-            then:
-              - lambda: |-
-                  ESP_LOGE(
-                    "espn",
-                    "Failed to retrieve today's %s events.",
-                    id(team_abbreviation)->state.c_str()
-                  );
-
-                  id(request_in_progress) = false;
-
-  - id: espn_get_event
-    mode: single
-    then:
-      - http_request.get:
-          url: !lambda |-
-            return
-              "https://sports.core.api.espn.com/v2/sports/"
-              "football/leagues/college-football/events/" +
-              id(espn_event_id) +
-              "?lang=en&region=us";
-
-          capture_response: true
-          max_response_buffer_size: 16384
-
-          on_response:
-            then:
-              - lambda: |-
-                  id(espn_event_found) = false;
-
-                  ESP_LOGI(
-                    "espn",
-                    "Event response: %u bytes",
-                    (unsigned) body.size()
-                  );
-
-                  bool parsed = json::parse_json(
-                    body,
-                    [](JsonObject root) -> bool {
-                      JsonArray competitions =
-                        root["competitions"];
-
-                      if (
-                        competitions.isNull() ||
-                        competitions.size() == 0
-                      ) {
-                        ESP_LOGE(
-                          "espn",
-                          "Event has no competitions."
-                        );
-                        return false;
-                      }
-
-                      JsonObject competition =
-                        competitions[0];
-
-                      JsonArray competitors =
-                        competition["competitors"];
-
-                      if (
-                        competitors.isNull() ||
-                        competitors.size() < 2
-                      ) {
-                        ESP_LOGE(
-                          "espn",
-                          "Event does not have two competitors."
-                        );
-                        return false;
-                      }
-
-                      bool our_team_found = false;
-                      std::string opponent_id;
-
-                      for (
-                        JsonObject competitor : competitors
-                      ) {
-                        const char *competitor_id =
-                          competitor["id"] | "";
-
-                        const char *home_away =
-                          competitor["homeAway"] | "";
-
-                        ESP_LOGI(
-                          "espn",
-                          "Competitor ID=%s homeAway=%s",
-                          competitor_id,
-                          home_away
-                        );
-
-                        if (
-                          std::string(competitor_id) ==
-                          id(espn_team_id)
-                        ) {
-                          our_team_found = true;
-                        } else if (
-                          opponent_id.empty()
-                        ) {
-                          opponent_id =
-                            competitor_id;
-                        }
-                      }
-
-                      if (!our_team_found) {
-                        ESP_LOGE(
-                          "espn",
-                          "Configured team ID %s was not found.",
-                          id(espn_team_id).c_str()
-                        );
-                        return false;
-                      }
-
-                      if (opponent_id.empty()) {
-                        ESP_LOGE(
-                          "espn",
-                          "Could not determine opponent team ID."
-                        );
-                        return false;
-                      }
-
-                      id(espn_opponent_team_id) =
-                        opponent_id;
-
-                      std::string event_name =
-                        root["name"] | "";
-
-                      std::string opponent =
-                        "Unknown";
-
-                      std::string team_name =
-                        id(espn_team_name);
-
-                      size_t at_pos =
-                        event_name.find(" at ");
-
-                      if (at_pos != std::string::npos) {
-                        if (
-                          event_name.find(
-                            team_name + " at "
-                          ) == 0
-                        ) {
-                          opponent =
-                            event_name.substr(
-                              at_pos + 4
-                            );
-                        } else {
-                          opponent =
-                            event_name.substr(
-                              0,
-                              at_pos
-                            );
-                        }
-                      }
-
-                      id(opponent_name)->
-                        publish_state(opponent);
-
-                      ESP_LOGI(
-                        "espn",
-                        "Opponent: %s (team ID %s)",
-                        opponent.c_str(),
-                        opponent_id.c_str()
-                      );
-
-                      id(espn_event_found) = true;
-
-                      return true;
-                    }
-                  );
-
-                  if (!parsed) {
-                    id(request_in_progress) = false;
-                  }
-
-              - if:
-                  condition:
-                    lambda: |-
-                      return id(espn_event_found);
-                  then:
-                    - script.execute: espn_get_team_score
-                  else:
-                    - lambda: |-
-                        id(request_in_progress) = false;
-
-          on_error:
-            then:
-              - lambda: |-
-                  ESP_LOGE(
-                    "espn",
-                    "Failed to retrieve ESPN event."
-                  );
-
-                  id(request_in_progress) = false;
-
-  - id: espn_get_team_score
-    mode: single
-    then:
-      - http_request.get:
-          url: !lambda |-
-            return
-              "https://sports.core.api.espn.com/v2/sports/"
-              "football/leagues/college-football/events/" +
-              id(espn_event_id) +
-              "/competitions/" +
-              id(espn_event_id) +
-              "/competitors/" +
-              id(espn_team_id) +
-              "/score?lang=en&region=us";
-
-          capture_response: true
-          max_response_buffer_size: 1024
-
-          on_response:
-            then:
-              - lambda: |-
-                  bool parsed = json::parse_json(
-                    body,
-                    [](JsonObject root) -> bool {
-                      int current_score =
-                        (int)(root["value"] | 0.0f);
-
-                      id(team_score)->
-                        publish_state(current_score);
-
-                      ESP_LOGI(
-                        "espn",
-                        "%s score: %d",
-                        id(team_abbreviation)->state.c_str(),
-                        current_score
-                      );
-
-                      if (!id(score_initialized)) {
-                        id(last_score) =
-                          current_score;
-
-                        id(score_initialized) =
-                          true;
-
-                        id(previous_score)->
-                          publish_state(current_score);
-
-                        id(last_score_change)->
-                          publish_state(0);
-
-                        ESP_LOGI(
-                          "espn",
-                          "Score baseline initialized at %d",
-                          current_score
-                        );
-                      } else {
-                        int delta =
-                          current_score -
-                          id(last_score);
-
-                        if (delta != 0) {
-                          id(previous_score)->
-                            publish_state(
-                              id(last_score)
-                            );
-
-                          id(last_score_change)->
-                            publish_state(delta);
-
-                          ESP_LOGI(
-                            "espn",
-                            "Score changed by %+d",
-                            delta
-                          );
-
-                          if (
-                            delta >=
-                            (int) id(score_threshold)->state
-                          ) {
-                            ESP_LOGI(
-                              "espn",
-                              "Scoring threshold reached: +%d",
-                              delta
-                            );
-
-                            id(play_scoring_song)->
-                              execute();
-                          }
-
-                          id(last_score) =
-                            current_score;
-                        }
-                      }
-
-                      return true;
-                    }
-                  );
-
-                  if (!parsed) {
-                    id(request_in_progress) = false;
-                  }
-
-              - delay: 250ms 
-              - script.execute: espn_get_opponent_score
-
-          on_error:
-            then:
-              - lambda: |-
-                  ESP_LOGE(
-                    "espn",
-                    "Failed to retrieve %s score.",
-                    id(team_abbreviation)->state.c_str()
-                  );
-
-                  id(request_in_progress) = false;
-
-  - id: espn_get_opponent_score
-    mode: single
-    then:
-      - http_request.get:
-          url: !lambda |-
-            return
-              "https://sports.core.api.espn.com/v2/sports/"
-              "football/leagues/college-football/events/" +
-              id(espn_event_id) +
-              "/competitions/" +
-              id(espn_event_id) +
-              "/competitors/" +
-              id(espn_opponent_team_id) +
-              "/score?lang=en&region=us";
-
-          capture_response: true
-          max_response_buffer_size: 1024
-
-          on_response:
-            then:
-              - lambda: |-
-                  bool parsed = json::parse_json(
-                    body,
-                    [](JsonObject root) -> bool {
-                      int current_score =
-                        (int)(root["value"] | 0.0f);
-
-                      id(opponent_score)->
-                        publish_state(current_score);
-
-                      ESP_LOGI(
-                        "espn",
-                        "Opponent score: %d",
-                        current_score
-                      );
-
-                      return true;
-                    }
-                  );
-
-                  if (!parsed) {
-                    id(request_in_progress) = false;
-                  }
-
-              - delay: 250ms
-              - script.execute: espn_get_status
-
-          on_error:
-            then:
-              - lambda: |-
-                  ESP_LOGE(
-                    "espn",
-                    "Failed to retrieve opponent score."
-                  );
-
-                  id(request_in_progress) = false;
-
-  - id: espn_get_status
-    mode: single
-    then:
-      - http_request.get:
-          url: !lambda |-
-            return
-              "https://sports.core.api.espn.com/v2/sports/"
-              "football/leagues/college-football/events/" +
-              id(espn_event_id) +
-              "/competitions/" +
-              id(espn_event_id) +
-              "/status?lang=en&region=us";
-
-          capture_response: true
-          max_response_buffer_size: 1024
-
-          on_response:
-            then:
-              - lambda: |-
-                  bool parsed = json::parse_json(
-                    body,
-                    [](JsonObject root) -> bool {
-                      const char *display_clock =
-                        root["displayClock"] | "";
-
-                      JsonObject type =
-                        root["type"];
-
-                      const char *description =
-                        type["description"] | "";
-
-                      const char *detail =
-                        type["detail"] | "";
-
-                      const char *short_detail =
-                        type["shortDetail"] | "";
-
-                      const char *state =
-                        type["state"] | "";
-
-                      id(game_clock)->
-                        publish_state(display_clock);
-
-                      if (strlen(short_detail) > 0) {
-                        id(game_status)->
-                          publish_state(short_detail);
-                      } else if (strlen(detail) > 0) {
-                        id(game_status)->
-                          publish_state(detail);
-                      } else {
-                        id(game_status)->
-                          publish_state(description);
-                      }
-
-                      id(last_espn_poll)->
-                        publish_state("Success");
-
-                      id(request_in_progress) = false;
-
-                      ESP_LOGI(
-                        "espn",
-                        "Game status: %s, clock %s",
-                        state,
-                        display_clock
-                      );
-
-                      return true;
-                    }
-                  );
-
-                  if (!parsed) {
-                    id(request_in_progress) = false;
-                  }
-
-          on_error:
-            then:
-              - lambda: |-
-                  ESP_LOGE(
-                    "espn",
-                    "Failed to retrieve ESPN game status."
-                  );
-
-                  id(request_in_progress) = false;
-
   - id: play_scoring_song
     mode: restart
     then:
@@ -1152,14 +337,180 @@ script:
 
       - delay: !lambda |-
           return (uint32_t)(
-            id(song_duration)->state * 1000.0f
+            id(song_duration).state * 1000.0f
           );
 
       - media_player.stop:
           id: football_player
 
+  # Fetch and parse the published JSON scoreboard.
+  - id: fetch_score
+    mode: single
+    then:
+      - http_request.get:
+          url: ${score_json_url}
+          capture_response: true
+          max_response_buffer_size: 4096
+          on_response:
+            then:
+              - if:
+                  condition:
+                    lambda: |-
+                      return response->status_code == 200;
+                  then:
+                    - lambda: |-
+                        bool parsed = json::parse_json(
+                          body,
+                          [](JsonObject root) -> bool {
+                            // Validate the essential fields before
+                            // publishing anything to the entities.
+                            if (
+                              !root["team"].is<const char *>() ||
+                              !root["opponent"].is<const char *>() ||
+                              !root["status"].is<const char *>() ||
+                              !root["penn_state_score"].is<int>() ||
+                              !root["opponent_score"].is<int>()
+                            ) {
+                              ESP_LOGW(
+                                "score",
+                                "JSON is missing one or more required fields."
+                              );
+                              return false;
+                            }
 
-          
+                            std::string team =
+                              root["team"].as<std::string>();
+                            std::string opponent =
+                              root["opponent"].as<std::string>();
+                            std::string status =
+                              root["status"].as<std::string>();
+                            std::string period =
+                              root["period"] | "";
+                            std::string event =
+                              root["event"] | "NONE";
+                            // Event ID is displayed for diagnostics only;
+                            // score-based playback does not depend on it.
+                            std::string new_event_id =
+                              root["event_id"] | "";
+
+                            // Read the scores.
+                            int new_team_score =
+                              root["penn_state_score"].as<int>();
+                            int new_opponent_score =
+                              root["opponent_score"].as<int>();
+                            int new_difference =
+                              root["score_difference"] |
+                              (new_team_score - new_opponent_score);
+
+                            // Optional scoring_team may be JSON null.
+                            std::string new_scoring_team = "NONE";
+                            if (!root["scoring_team"].isNull()) {
+                              new_scoring_team =
+                                root["scoring_team"].as<std::string>();
+                            }
+
+                            // Publish the scoreboard.
+                            id(team_name).publish_state(team);
+                            id(opponent_name).publish_state(opponent);
+                            id(game_status).publish_state(status);
+                            id(game_period).publish_state(period);
+                            id(team_score).publish_state(new_team_score);
+                            id(opponent_score).publish_state(new_opponent_score);
+                            id(score_difference).publish_state(new_difference);
+                            id(scoring_event).publish_state(event);
+                            id(scoring_team).publish_state(new_scoring_team);
+                            id(current_event_id).publish_state(new_event_id);
+
+                            // Establish the first score as a baseline.
+                            // Do not announce the score already in progress
+                            // when the ESP32 first starts or is reset.
+                            if (!id(score_initialized)) {
+                              id(last_score) = new_team_score;
+                              id(score_initialized) = true;
+                              id(previous_score).publish_state(new_team_score);
+                              id(last_score_change).publish_state(0);
+
+                              ESP_LOGI(
+                                "score",
+                                "Initial score baseline: %s %d, %s %d",
+                                team.c_str(),
+                                new_team_score,
+                                opponent.c_str(),
+                                new_opponent_score
+                              );
+                            } else {
+                              // Compare Penn State's current score with the
+                              // previously stored Penn State score. The
+                              // threshold alone controls automatic playback.
+                              int delta = new_team_score - id(last_score);
+
+                              if (delta != 0) {
+                                id(previous_score).publish_state(
+                                  id(last_score)
+                                );
+                                id(last_score_change).publish_state(delta);
+                              }
+
+                              if (delta >= (int) id(score_threshold).state) {
+                                ESP_LOGI(
+                                  "score",
+                                  "Penn State score increased by %d points; threshold is %d. Playing song.",
+                                  delta,
+                                  (int) id(score_threshold).state
+                                );
+                                id(play_scoring_song).execute();
+                              } else if (delta > 0) {
+                                ESP_LOGI(
+                                  "score",
+                                  "Penn State score increased by %d points; below playback threshold %d.",
+                                  delta,
+                                  (int) id(score_threshold).state
+                                );
+                              } else if (delta < 0) {
+                                ESP_LOGW(
+                                  "score",
+                                  "Penn State score decreased by %d; updating baseline without playback.",
+                                  -delta
+                                );
+                              }
+
+                              // Always store the latest score so the next
+                              // poll compares against this value, not an old one.
+                              id(last_score) = new_team_score;
+                            }
+
+                            id(last_json_poll).publish_state("Success");
+
+                            ESP_LOGI(
+                              "score",
+                              "%s vs %s: %d - %d, %s",
+                              team.c_str(),
+                              opponent.c_str(),
+                              new_team_score,
+                              new_opponent_score,
+                              period.c_str()
+                            );
+
+                            return true;
+                          }
+                        );
+
+                        if (!parsed) {
+                          ESP_LOGW("score", "Could not parse scoreboard JSON.");
+                        }
+                  else:
+                    - lambda: |-
+                        ESP_LOGW(
+                          "score",
+                          "HTTP request returned status %d",
+                          response->status_code
+                        );
+          on_error:
+            then:
+              - lambda: |-
+                  ESP_LOGW("score", "Unable to retrieve scoreboard JSON.");
+                  id(last_json_poll).publish_state("Failed");
+
 # -------------------------------------------------------------------
 # PHYSICAL BUTTON
 # -------------------------------------------------------------------
@@ -1195,7 +546,6 @@ binary_sensor:
     web_server:
       sorting_group_id: controls_group
 
-
 # -------------------------------------------------------------------
 # WEB BUTTONS
 # -------------------------------------------------------------------
@@ -1220,10 +570,10 @@ button:
       sorting_group_id: controls_group
 
   - platform: template
-    name: "Check ESPN Now"
+    name: "Fetch Score Now"
     icon: "mdi:refresh"
     on_press:
-      - script.execute: check_espn
+      - script.execute: fetch_score
     web_server:
       sorting_group_id: controls_group
 
@@ -1234,15 +584,11 @@ button:
       - lambda: |-
           id(score_initialized) = false;
           id(last_score) = 0;
-          id(last_event_id) = "";
 
           id(previous_score).publish_state(0);
           id(last_score_change).publish_state(0);
 
-          ESP_LOGI(
-            "espn",
-            "Score tracking reset"
-          );
+          ESP_LOGI("score", "Score tracking reset.");
     web_server:
       sorting_group_id: diagnostics_group
 
@@ -1252,17 +598,11 @@ button:
     web_server:
       sorting_group_id: diagnostics_group
 
-
 # -------------------------------------------------------------------
-# AUTOMATIC ESPN POLLING
+# AUTOMATIC JSON POLLING
 # -------------------------------------------------------------------
-
-time:
-  - platform: sntp
-    id: sntp_time
-    timezone: America/Chicago
 
 interval:
-  - interval: 30s
+  - interval: 15s
     then:
-      - script.execute: check_espn
+      - script.execute: fetch_score
