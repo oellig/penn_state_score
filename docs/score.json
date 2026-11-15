@@ -3,11 +3,11 @@
   "opponent": "Minnesota Golden Gophers",
   "status": "IN_PROGRESS",
   "period": "Q3",
-  "penn_state_score": 28,
+  "penn_state_score": 35,
   "opponent_score": 0,
-  "score_difference": 28,
+  "score_difference": 35,
   "game_id": "401858524",
   "event": "SCORE_CHANGED",
   "scoring_team": "PENN_STATE",
-  "event_id": "401858524-28-0"
+  "event_id": "401858524-35-0"
 }
