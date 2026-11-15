@@ -4,10 +4,10 @@
   "status": "IN_PROGRESS",
   "period": "Q3",
   "penn_state_score": 35,
-  "opponent_score": 7,
-  "score_difference": 28,
+  "opponent_score": 13,
+  "score_difference": 22,
   "game_id": "401858524",
   "event": "SCORE_CHANGED",
   "scoring_team": "OPPONENT",
-  "event_id": "401858524-35-7"
+  "event_id": "401858524-35-13"
 }
