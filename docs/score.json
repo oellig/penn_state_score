@@ -1,13 +1,13 @@
 {
   "team": "Penn State",
-  "opponent": "Minnesota Golden Gophers",
-  "status": "FINAL",
-  "period": "Q4",
-  "penn_state_score": 42,
-  "opponent_score": 14,
-  "score_difference": 28,
-  "game_id": "401858524",
-  "event": "SCORE_CHANGED",
-  "scoring_team": "PENN_STATE",
-  "event_id": "401858524-42-14"
+  "opponent": "Rutgers Scarlet Knights",
+  "status": "UPCOMING",
+  "period": null,
+  "penn_state_score": 0,
+  "opponent_score": 0,
+  "score_difference": 0,
+  "game_id": "401858532",
+  "event": "NONE",
+  "scoring_team": null,
+  "event_id": "401858532-0-0"
 }
