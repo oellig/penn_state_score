@@ -3,11 +3,11 @@
   "opponent": "Rutgers Scarlet Knights",
   "status": "IN_PROGRESS",
   "period": "Q1",
-  "penn_state_score": 7,
+  "penn_state_score": 9,
   "opponent_score": 0,
-  "score_difference": 7,
+  "score_difference": 9,
   "game_id": "401858532",
   "event": "SCORE_CHANGED",
   "scoring_team": "PENN_STATE",
-  "event_id": "401858532-7-0"
+  "event_id": "401858532-9-0"
 }
