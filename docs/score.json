@@ -1,13 +1,13 @@
 {
   "team": "Penn State",
-  "opponent": "Rutgers Scarlet Knights",
-  "status": "FINAL",
-  "period": "Q4",
-  "penn_state_score": 24,
-  "opponent_score": 25,
-  "score_difference": -1,
-  "game_id": "401858532",
-  "event": "SCORE_CHANGED",
-  "scoring_team": "OPPONENT",
-  "event_id": "401858532-24-25"
+  "opponent": "Maryland Terrapins",
+  "status": "UPCOMING",
+  "period": null,
+  "penn_state_score": 0,
+  "opponent_score": 0,
+  "score_difference": 0,
+  "game_id": "401858539",
+  "event": "NONE",
+  "scoring_team": null,
+  "event_id": "401858539-0-0"
 }
