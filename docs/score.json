@@ -3,11 +3,11 @@
   "opponent": "Maryland Terrapins",
   "status": "IN_PROGRESS",
   "period": "Q2",
-  "penn_state_score": 0,
+  "penn_state_score": 3,
   "opponent_score": 10,
-  "score_difference": -10,
+  "score_difference": -7,
   "game_id": "401858539",
   "event": "SCORE_CHANGED",
-  "scoring_team": "OPPONENT",
-  "event_id": "401858539-0-10"
+  "scoring_team": "PENN_STATE",
+  "event_id": "401858539-3-10"
 }
