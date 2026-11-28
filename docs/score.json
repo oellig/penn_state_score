@@ -1,8 +1,8 @@
 {
   "team": "Penn State",
   "opponent": "Maryland Terrapins",
-  "status": "UPCOMING",
-  "period": null,
+  "status": "IN_PROGRESS",
+  "period": "Q1",
   "penn_state_score": 0,
   "opponent_score": 0,
   "score_difference": 0,
